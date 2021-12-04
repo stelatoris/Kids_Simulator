@@ -30,6 +30,7 @@ unsigned long time_begin = millis();
 unsigned long seconds{ 0 };
 
 bool timer_second()
+// return true every 1000 millis
 {
 
     if (1000 <= millis() - time_begin &&
@@ -82,16 +83,16 @@ double throttle()
 }
 
 double fuel_flow()
+
 {
     double gps = 1.0;  // gives gallons per second at 100% throttle
-    if (0 < fuel_qty) {
+    if (0 < fuel_qty && eng_sw_state) {
         double flow = throttle() * gps / 100; // gallons
-        if (timer_second()) fuel_qty -= (flow * 1000);
+        if (timer_second()) fuel_qty -= (flow * 100); // fuel is depleted from tank
         if (fuel_qty <= 0) fuel_qty = 0;
         return flow;
     }
     else { return 0.0; }
-
 }
 //--------------------------------------------------------
 
@@ -113,15 +114,22 @@ void engine()
 //----------
 void gauge_RPM()
 {
-    int deg = rpm * 180 / 100;
-    servo_RPM.write(deg);
+    if (pwr_sw_state == HIGH) {
+        int deg = rpm * 180 / 100;
+        servo_RPM.write(deg);
+    }
+    else servo_RPM.write(0);
 }
 
 //--------------------------------------------------------
 void gauge_fuel_qty()
 {
-    int lvl = fuel_qty * 180 / tank_capacity;
-    servo_Fuel.write(lvl);
+    if (pwr_sw_state == HIGH) {
+        int lvl = fuel_qty * 180 / tank_capacity;
+        servo_Fuel.write(180 - lvl);
+    }
+    else servo_Fuel.write(180);
+
 }
 
 //----------
@@ -131,7 +139,7 @@ void gauge_refuel()
         digitalWrite(fuel_L_LED, HIGH);
         digitalWrite(fuel_H_LED, LOW);
     }
-    else if (fuel_qty > 0) {
+    else if (pwr_sw_state == HIGH && fuel_qty > 0) {
         digitalWrite(fuel_L_LED, LOW);
         digitalWrite(fuel_H_LED, HIGH);
     }
@@ -165,15 +173,16 @@ void gears()
     if (pwr_sw_state == HIGH && gears_sw_state == HIGH)
         digitalWrite(gears_LED, HIGH);
     else digitalWrite(gears_LED, LOW);
-
 }
 
 //--------------------------------------------------------
 
 void print_stats()
 {
-    Serial.print("\t Time(s): ");
-    Serial.print(seconds);
+    Serial.print("\t Time(millis): ");
+    Serial.print(millis());
+    //Serial.print("\t Time(s): ");
+    //Serial.print(seconds);
     Serial.print("\t Fuel Amount: ");
     Serial.print(fuel_qty);
     Serial.print("\t Fuel flow: ");
