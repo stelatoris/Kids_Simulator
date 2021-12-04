@@ -2,7 +2,8 @@
 //
 #include <Servo.h>
 
-Servo servo;
+Servo servo_RPM;
+Servo servo_Fuel;
 
 const int power_swtch{ 2 };
 const int eng_swtch{ 3 };
@@ -10,10 +11,13 @@ const int refuel_swtch{ 6 };
 int pwr_sw_state{ 0 };
 int eng_sw_state{ 0 };
 int rfl_sw_state{ 0 };
+int gears_sw_state{ 0 };
 const int pwr_LED{ 4 };
 const int eng_LED{ 5 };
 const int fuel_L_LED{ 7 };
 const int fuel_H_LED{ 8 };
+const int gears_LED{ 11 };
+const int gears_swtch{ 12 };
 
 int throttle_value = 0;
 
@@ -24,7 +28,6 @@ bool engine_on = false;
 
 unsigned long time_begin = millis();
 unsigned long seconds{ 0 };
-
 
 bool timer_second()
 {
@@ -46,6 +49,7 @@ void check_inputs()
     pwr_sw_state = digitalRead(power_swtch);
     eng_sw_state = digitalRead(eng_swtch);
     rfl_sw_state = digitalRead(refuel_swtch);
+    gears_sw_state = digitalRead(gears_swtch);
 }
 
 //---------------------------------
@@ -64,6 +68,7 @@ void gauge_pwr()
 //---------------------------------
 
 double fuel_qty{ 0.0 };
+const double tank_capacity{ 10000.0 };
 
 void refuel()
 {
@@ -73,7 +78,7 @@ void refuel()
 
 double throttle()
 {
-    return throttle_value * 100.0 / 1023.0;
+    return int(throttle_value * 100.0 / 1023.0);
 }
 
 double fuel_flow()
@@ -88,7 +93,7 @@ double fuel_flow()
     else { return 0.0; }
 
 }
-//---------------------------------
+//--------------------------------------------------------
 
 double rpm{ 0.0 };
 
@@ -105,17 +110,24 @@ void engine()
     }
 }
 
-//---------------------------------
+//----------
 void gauge_RPM()
 {
     int deg = rpm * 180 / 100;
-    servo.write(deg);
+    servo_RPM.write(deg);
 }
 
-//---------------------------------
+//--------------------------------------------------------
+void gauge_fuel_qty()
+{
+    int lvl = fuel_qty * 180 / tank_capacity;
+    servo_Fuel.write(lvl);
+}
+
+//----------
 void gauge_refuel()
 {
-    if (pwr_sw_state && fuel_qty == 0) {
+    if (pwr_sw_state == HIGH && fuel_qty == 0) {
         digitalWrite(fuel_L_LED, HIGH);
         digitalWrite(fuel_H_LED, LOW);
     }
@@ -131,8 +143,11 @@ void gauge_refuel()
     if (rfl_sw_state == HIGH) refuel();
     else {}
 
+    gauge_fuel_qty();
+
 }
-//-----------------------------------------------------------
+
+//----------
 
 void gauge_eng()
 {
@@ -144,7 +159,16 @@ void gauge_eng()
     }
     else {}
 }
-//---------------------------------
+//--------------------------------------------------------
+void gears()
+{
+    if (pwr_sw_state == HIGH && gears_sw_state == HIGH)
+        digitalWrite(gears_LED, HIGH);
+    else digitalWrite(gears_LED, LOW);
+
+}
+
+//--------------------------------------------------------
 
 void print_stats()
 {
@@ -166,8 +190,13 @@ void setup()
     pinMode(power_swtch, INPUT);
     pinMode(pwr_LED, OUTPUT);
     pinMode(eng_LED, OUTPUT);
+    pinMode(fuel_L_LED, OUTPUT);
+    pinMode(fuel_H_LED, OUTPUT);
+    pinMode(gears_LED, OUTPUT);
+    pinMode(gears_swtch, INPUT);
     pinMode(A0, INPUT);
-    servo.attach(9);
+    servo_RPM.attach(9);
+    servo_Fuel.attach(10);
 }
 
 void loop()
@@ -175,6 +204,7 @@ void loop()
     check_inputs();
     throttle_value = analogRead(A0);
     engine();
+    gears();
     gauge_pwr();
     gauge_eng();
     gauge_RPM();
