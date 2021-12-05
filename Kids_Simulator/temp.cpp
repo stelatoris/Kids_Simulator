@@ -58,18 +58,38 @@ void check_inputs()
 }
 
 //---------------------------------
-void gauge_pwr()
+bool power()
 {
-    if (pwr_sw_state == LOW) {
-        digitalWrite(pwr_LED, LOW);
-        digitalWrite(eng_LED, LOW);
-        digitalWrite(fuel_L_LED, LOW);
-        digitalWrite(f_pump_LED, LOW);
+    if (pwr_sw_state == HIGH) {
+        digitalWrite(pwr_LED, HIGH);
+        return true;
     }
     else {
-        digitalWrite(pwr_LED, HIGH);
+        digitalWrite(pwr_LED, LOW);
+        return false;
     }
 }
+
+//---------------------------------
+void systems()
+{
+    if (power()) {
+        fuel_pump();
+        engine();
+        gears();
+        gauge_eng();
+        gauge_RPM();
+        gauge_refuel();
+    }
+    else {
+        digitalWrite(pwr_LED, LOW);
+        digitalWrite(eng_LED, LOW);
+        digitalWrite(f_pump_LED, LOW);
+        digitalWrite(fuel_L_LED, LOW);
+        digitalWrite(gears_LED, LOW);
+    }
+}
+
 //---------------------------------
 
 double fuel_qty{ 0.0 };
@@ -83,7 +103,7 @@ void refuel()
 
 bool fuel_pump()
 {
-    if (f_pump_sw_state && pwr_sw_state) {
+    if (f_pump_sw_state == HIGH) {
         digitalWrite(f_pump_LED, HIGH);
         return true;
     }
@@ -104,7 +124,7 @@ double fuel_flow()
     double gps = 1.0;  // gives gallons per second at 100% throttle
     if (0 < fuel_qty && eng_sw_state && fuel_pump()) {
         double flow = throttle() * gps / 100; // gallons
-        if (timer_second()) fuel_qty -= (flow * 1000); // fuel is depleted from tank
+        if (timer_second()) fuel_qty -= (flow * 100); // fuel is depleted from tank
         if (fuel_qty <= 0) fuel_qty = 0;
         return flow;
     }
@@ -116,12 +136,12 @@ double rpm{ 0.0 };
 
 void engine()
 {
-    if (eng_sw_state && fuel_flow() > 0) rpm = 100 * fuel_flow(); // 100% RPM at fuel flow of 1 gallon per second
+    if (eng_sw_state == 1 && fuel_flow() > 0) rpm = 100 * fuel_flow(); // 100% RPM at fuel flow of 1 gallon per second
 
-    if (rpm > 0 && eng_sw_state) engine_on = true;
+    if (rpm > 0 && eng_sw_state == 1) engine_on = true;
     else engine_on == false;
 
-    if (!eng_sw_state || fuel_flow() <= 0 || fuel_qty <= 0) {
+    if (eng_sw_state == 0 || fuel_flow() <= 0 || fuel_qty <= 0) {
         rpm = 0.0;
         engine_on = false;
     }
@@ -130,7 +150,7 @@ void engine()
 //----------
 void gauge_RPM()
 {
-    if (pwr_sw_state) {
+    if (pwr_sw_state == HIGH) {
         int deg = rpm * 180 / 100;
         servo_RPM.write(deg);
     }
@@ -140,7 +160,10 @@ void gauge_RPM()
 //--------------------------------------------------------
 void gauge_fuel_qty()
 {
-    if (pwr_sw_state == HIGH) {
+    if (fuel_qty == 0) digitalWrite(fuel_L_LED, HIGH);
+    else if (fuel_qty > 0) digitalWrite(fuel_L_LED, LOW);
+
+    if (power()) {
         int lvl = fuel_qty * 180 / tank_capacity;
         servo_Fuel.write(180 - lvl);
     }
@@ -227,13 +250,7 @@ void loop()
     check_inputs();
     timer_second();
     throttle_value = analogRead(A0);
-    fuel_pump();
-    engine();
-    gears();
-    gauge_pwr();
-    gauge_eng();
-    gauge_RPM();
-    gauge_refuel();
+    systems();
     print_stats();
 }
 
