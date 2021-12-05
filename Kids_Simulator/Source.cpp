@@ -251,4 +251,17 @@ void loop()
    }
 }
 
+---------------------
+
+Thrust = {constant}*Throttle_Position.
+
+Drag = C_D * V^2
+V_new = V_old + F_x, where F_x = Thrust - Drag.
+
+https://wright.nasa.gov/airplane/drageq.html
+https://www.grc.nasa.gov/WWW/k-12/airplane/drageq.html
+https://softschools.com/formulas/physics/drag_formula/470/
+
+
+
  */
