@@ -161,7 +161,15 @@ double rpm{ 0.0 };
 
 void engine()
 {
-    if (eng_sw_state && fuel_flow() > 0) rpm = 100.0 * fuel_flow(); // 100% RPM at fuel flow of 1 gallon per second
+    double flow = fuel_flow();
+    if (flow > 0.0) {               // adds RPM spooling
+        if (rpm < 100.0 * flow) {
+            rpm += 3;
+        }
+        if (rpm > 100.0 * flow) {
+            rpm -= 2;
+        }
+    }
 
     if (rpm > 0 && eng_sw_state) engine_on = true;
     else engine_on == false;
@@ -226,13 +234,15 @@ double speed(double v) {
 void gauge_Speed()
 {
     if (pwr_sw_state) {
-        double deg = speed_v * 180.0 / 500;
+        //double deg = speed_v * 180.0 / 500;
+        double deg = floatMap(speed_v, 0, 500, 0, 179);
         Serial.print("\t deg: ");
         Serial.print(int(deg));
         servo_Speed.write(deg);
     }
     else servo_Speed.write(0);
 }
+
 //--------------------------------------------------------
 
 void print_stats()
@@ -278,6 +288,7 @@ void loop()
     check_inputs();
     timer_second();
     throttle_value = analogRead(throttle_knob);
+
     fuel_pump();
     engine();
     gears();
