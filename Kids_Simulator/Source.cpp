@@ -21,7 +21,8 @@ int gears_sw_state{ 0 };
 
 const int pwr_LED{ 22 };
 const int eng_LED{ 23 };
-const int fuel_L_LED{ 24 };
+const int fuel_E_LED{ 24 };
+const int fuel_L_LED{ 27 };
 const int f_pump_LED{ 25 };
 const int gears_LED{ 26 };
 
@@ -41,18 +42,18 @@ double floatMap(double x, double in_min, double in_max, double out_min, double o
 
 //---------------------------------
 
-unsigned long time_begin = millis();
+unsigned long prev_time = millis();
 unsigned long seconds{ 0 };
 
 bool timer_second()
 // return true every 1000 millis
 {
 
-    if (1000 <= millis() - time_begin &&
-        millis() - time_begin <= 1100) {
+    if (1000 <= millis() - prev_time) {
+        prev_time = millis();
         ++seconds;
         Serial.println(seconds);
-        time_begin = millis();
+
         return true;
     }
     else { return false; }
@@ -75,7 +76,7 @@ void gauge_pwr()
     if (pwr_sw_state == LOW) {
         digitalWrite(pwr_LED, LOW);
         digitalWrite(eng_LED, LOW);
-        digitalWrite(fuel_L_LED, LOW);
+        digitalWrite(fuel_E_LED, LOW);
         digitalWrite(f_pump_LED, LOW);
     }
     else {
@@ -89,7 +90,8 @@ const double tank_capacity{ 10000.0 };
 
 void refuel()
 {
-    fuel_qty = 10000; //lbs
+    fuel_qty += 1000; //lbs
+    if (fuel_qty > tank_capacity) fuel_qty = tank_capacity;
 }
 //---------------------------------
 
@@ -139,21 +141,27 @@ void gauge_fuel_qty()
 //----------
 void gauge_refuel()
 {
-    if (pwr_sw_state == HIGH && fuel_qty == 0) {
-        digitalWrite(fuel_L_LED, HIGH);
-    }
-    else if (pwr_sw_state == HIGH && fuel_qty > 0) {
-        digitalWrite(fuel_L_LED, LOW);
-    }
-    else {
-        digitalWrite(fuel_L_LED, LOW);
+    if (pwr_sw_state == HIGH) {
+        if (fuel_qty == 0) {
+            digitalWrite(fuel_E_LED, HIGH);
+            digitalWrite(fuel_L_LED, LOW);
+        }
+
+        else if (fuel_qty <= 10 * tank_capacity / 100) {
+            digitalWrite(fuel_E_LED, LOW);
+            digitalWrite(fuel_L_LED, HIGH);
+        }
+
+
+        else if (fuel_qty > 0) {
+            digitalWrite(fuel_E_LED, LOW);
+            digitalWrite(fuel_L_LED, LOW);
+        }
+        else {}
     }
 
     if (rfl_sw_state == HIGH) refuel();
     else {}
-
-
-
 }
 //--------------------------------------------------------
 
@@ -162,19 +170,19 @@ double rpm{ 0.0 };
 void engine()
 {
     double flow = fuel_flow();
-    if (flow > 0.0) {               // adds RPM spooling
+    if (flow > 0.0) {               //spools RPM
         if (rpm < 100.0 * flow) {
-            rpm += 3;
+            rpm += 2.5;             // spools up
         }
         if (rpm > 100.0 * flow) {
-            rpm -= 2;
+            rpm -= 2.0;             // spools down
         }
     }
 
     if (rpm > 0 && eng_sw_state) engine_on = true;
     else engine_on == false;
 
-    if (!eng_sw_state || fuel_flow() <= 0 || fuel_qty <= 0) {
+    if (!eng_sw_state || fuel_flow() <= 0) {
         rpm = 0.0;
         engine_on = false;
     }
@@ -189,8 +197,6 @@ void gauge_RPM()
     }
     else servo_RPM.write(0.0);
 }
-
-
 
 //----------
 
@@ -269,6 +275,7 @@ void setup()
     pinMode(power_swtch, INPUT);
     pinMode(pwr_LED, OUTPUT);
     pinMode(eng_LED, OUTPUT);
+    pinMode(fuel_E_LED, OUTPUT);
     pinMode(fuel_L_LED, OUTPUT);
     pinMode(gears_LED, OUTPUT);
     pinMode(gears_swtch, INPUT);
