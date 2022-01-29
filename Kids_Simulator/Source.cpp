@@ -1,6 +1,7 @@
 // Kids Flight Simulator
 //
 #include <Servo.h>
+#include "tools.h"
 
 Servo servo_RPM;
 Servo servo_Fuel;
@@ -30,17 +31,10 @@ const int fuel_servo{ 30 };
 const int rpm_servo{ 31 };
 const uint8_t speed_servo{ A1 };
 
-double throttle_value = 0;
+Fuel_tank tank;
+Engine engine1(tank);
 
-
-bool engine_on = false;
 double speed_v{ 0 };
-
-double floatMap(double x, double in_min, double in_max, double out_min, double out_max) {
-    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
-
-//---------------------------------
 
 unsigned long prev_time = millis();
 unsigned long seconds{ 0 };
@@ -59,7 +53,68 @@ bool timer_second()
     else { return false; }
 }
 
-//---------------------------------
+//----------------------------------------------------------------------------
+
+void Fuel_tank::refuel()
+{
+    qty += 1000; //lbs
+    if (qty > cpcty) qty = cpcty;
+}
+
+double Engine::get_throttle()
+{
+    double angle = floatMap(throttle, 0, 1023, 0, 100);
+    return angle;
+    //return throttle_value * 100.0 / 1023.0;
+}
+
+double Engine::rpm()
+{
+    double flow = fuel_flow();
+    if (flow > 0.0) {               //spools RPM
+        if (eng_rpm < 100.0 * flow) {
+            eng_rpm += 1.0;             // spools up
+        }
+        if (eng_rpm > 100.0 * flow) {
+            eng_rpm -= 1.0;             // spools down
+        }
+    }
+
+    if (eng_rpm > 0 && eng_sw_state) eng_ON = true;
+    else eng_ON == false;
+
+    if (!eng_sw_state || flow <= 0) {
+        eng_rpm = 0.0;
+        eng_ON = false;
+    }
+
+    return eng_rpm;
+}
+
+bool Engine::fuel_pump()
+{
+    if (f_pump_sw_state && pwr_sw_state) {
+        digitalWrite(f_pump_LED, HIGH);
+        return true;
+    }
+    else {
+        digitalWrite(f_pump_LED, LOW);
+        return false;
+    }
+}
+
+double Engine::fuel_flow()
+{
+    if (0 < tank.get_quantity() && eng_sw_state && fuel_pump()) {
+        f_flow = get_throttle() * gps / 100.0; // gallons
+        if (timer_second()) tank.consume(f_flow * 100); // fuel is depleted from tank
+        if (tank.get_quantity() <= 0) tank.set_quantity(0.0);
+    }
+    else { f_flow = 0.0; }
+    return f_flow;
+}
+
+//--------------------------------------------------------------------------------------------
 
 void check_inputs()
 {
@@ -85,131 +140,62 @@ void gauge_pwr()
 }
 //---------------------------------
 
-double fuel_qty{ 0.0 };
-const double tank_capacity{ 10000.0 };
-
-void refuel()
-{
-    fuel_qty += 1000; //lbs
-    if (fuel_qty > tank_capacity) fuel_qty = tank_capacity;
-}
-//---------------------------------
-
-bool fuel_pump()
-{
-    if (f_pump_sw_state && pwr_sw_state) {
-        digitalWrite(f_pump_LED, HIGH);
-        return true;
-    }
-    else {
-        digitalWrite(f_pump_LED, LOW);
-        return false;
-    }
-}
-
-double throttle()
-{
-    double angle = floatMap(throttle_value, 0, 1023, 0, 100);
-    return angle;
-    //return throttle_value * 100.0 / 1023.0;
-}
-
-double fuel_flow()
-
-{
-    double gps = 1.0;  // gives gallons per second at 100% throttle
-    if (0 < fuel_qty && eng_sw_state && fuel_pump()) {
-        double flow = throttle() * gps / 100.0; // gallons
-        if (timer_second()) fuel_qty -= (flow * 100.0); // fuel is depleted from tank
-        if (fuel_qty <= 0) fuel_qty = 0;
-        return flow;
-    }
-    else { return 0.0; }
-}
-
-//----------
-void gauge_fuel_qty()
+void gauge_fuel_qty(Fuel_tank& f)
 {
     if (pwr_sw_state == HIGH) {
-        double lvl = fuel_qty * 180 / tank_capacity;
+        double lvl = f.get_quantity() * 180 / f.get_capacity();
         servo_Fuel.write(180 - int(lvl));
     }
     else servo_Fuel.write(180);
-
 }
 
 //----------
-void gauge_refuel()
+void gauge_refuel(Fuel_tank& f)
 {
     if (pwr_sw_state == HIGH) {
-        if (fuel_qty == 0) {
+        if (f.get_quantity() == 0) {
             digitalWrite(fuel_E_LED, HIGH);
             digitalWrite(fuel_L_LED, LOW);
         }
 
-        else if (fuel_qty <= 10 * tank_capacity / 100) {
+        else if (f.get_quantity() <= 10 * f.get_capacity() / 100) {
             digitalWrite(fuel_E_LED, LOW);
             digitalWrite(fuel_L_LED, HIGH);
         }
 
-
-        else if (fuel_qty > 0) {
+        else if (f.get_quantity() > 0) {
             digitalWrite(fuel_E_LED, LOW);
             digitalWrite(fuel_L_LED, LOW);
         }
         else {}
     }
 
-    if (rfl_sw_state == HIGH) refuel();
+    if (rfl_sw_state == HIGH) f.refuel();
     else {}
 }
 //--------------------------------------------------------
 
-double rpm{ 0.0 };
-
-void engine()
-{
-    double flow = fuel_flow();
-    if (flow > 0.0) {               //spools RPM
-        if (rpm < 100.0 * flow) {
-            rpm += 2.5;             // spools up
-        }
-        if (rpm > 100.0 * flow) {
-            rpm -= 2.0;             // spools down
-        }
-    }
-
-    if (rpm > 0 && eng_sw_state) engine_on = true;
-    else engine_on == false;
-
-    if (!eng_sw_state || fuel_flow() <= 0) {
-        rpm = 0.0;
-        engine_on = false;
-    }
-}
-
-//----------
-void gauge_RPM()
+void gauge_RPM(Engine& e)
 {
     if (pwr_sw_state) {
-        double deg = rpm * 180.0 / 100;
+        double deg = e.rpm() * 180.0 / 100;
         servo_RPM.write(int(deg));
     }
     else servo_RPM.write(0.0);
 }
 
 //----------
-
-void gauge_eng()
+void gauge_eng(Engine& e)
 {
-    if (engine_on == false) {
+    if (e.engineON() == false) {
         digitalWrite(eng_LED, LOW);
     }
-    else if (pwr_sw_state && engine_on == true) {
+    else if (pwr_sw_state && e.engineON() == true) {
         digitalWrite(eng_LED, HIGH);
     }
     else {}
 }
+
 //--------------------------------------------------------
 void gears()
 {
@@ -222,9 +208,9 @@ void gears()
 
 const double c_d = 0.001;
 double drag{ 0 };
-double speed(double v) {
+double speed(double v, Engine& e) {
 
-    double thrust = 2.0 * rpm;
+    double thrust = 2.0 * e.rpm();
     drag = c_d * pow(v, 2);
     double v_new{ 0.0 };
     double v_old = v;
@@ -258,17 +244,24 @@ void print_stats()
     Serial.print("\t Time(s): ");
     Serial.print(seconds);
     Serial.print("\t Fuel Amount: ");
-    Serial.print(fuel_qty);
+    Serial.print(tank.get_quantity());
     Serial.print("\t Fuel flow: ");
-    Serial.print(fuel_flow());
+    Serial.print(engine1.fuel_flow());
     Serial.print("\t Throttle: ");
-    Serial.print(throttle());
+    Serial.print(engine1.get_throttle());
     Serial.print("\t RPM: ");
-    Serial.print(rpm);
+    Serial.print(engine1.rpm());
     Serial.print("\t Speed: ");
     Serial.print(speed_v);
     Serial.println();
 }
+
+void engine_status(Engine& e)
+{
+    e.fuel_pump();
+    e.rpm();
+}
+
 void setup()
 {
     Serial.begin(9600);
@@ -288,24 +281,25 @@ void setup()
     servo_RPM.attach(rpm_servo);
     servo_Fuel.attach(fuel_servo);
     servo_Speed.attach(speed_servo);
+
 }
+
 
 void loop()
 {
     check_inputs();
     timer_second();
-    throttle_value = analogRead(throttle_knob);
+    engine1.set_throttle(analogRead(throttle_knob));
 
-    fuel_pump();
-    engine();
+    engine_status(engine1);
     gears();
     gauge_pwr();
-    gauge_eng();
-    gauge_RPM();
-    gauge_refuel();
-    gauge_fuel_qty();
+    gauge_eng(engine1);
+    gauge_RPM(engine1);
+    gauge_refuel(tank);
+    gauge_fuel_qty(tank);
     gauge_Speed();
-    speed_v = speed(speed_v);
+    speed_v = speed(speed_v, engine1);
     print_stats();
 }
 
