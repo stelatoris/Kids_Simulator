@@ -9,8 +9,9 @@ Servo servo_Fuel;
 Servo servo_Speed;
 
 const int power_swtch{ 2 };
-const int eng_swtch{ 3 };
-const int refuel_swtch{ 40 };
+const int eng1_start{ 8 };
+const int eng2_start{ 9 };
+const int refuel_swtch{ 4 };
 const int gears_swtch{ 5 };
 const int f_pump_swtch{ 6 };
 const uint8_t throttle1_knob{ A0 };
@@ -36,8 +37,8 @@ const int rpm2_servo{ 32 };
 const uint8_t speed_servo{ A2 };
 
 Fuel_tank tank;
-Engine engine1(tank);
-Engine engine2(tank);
+Engine engine1(tank, eng1_start);
+Engine engine2(tank, eng2_start);
 
 
 double speed_v{ 0 };
@@ -93,12 +94,8 @@ double Engine::rpm()
         }
     }
 
-    if (eng_rpm > 0 && eng_sw_state) eng_ON = true;
-    else eng_ON == false;
-
-    if (!eng_sw_state || flow <= 0) {
+    if (!eng_ON || flow <= 0) {
         eng_rpm = 0.0;
-        eng_ON = false;
     }
 
     return eng_rpm;
@@ -112,16 +109,21 @@ bool Engine::fuel_pump()
     }
     else {
         digitalWrite(f_pump_LED, LOW);
+        eng_ON == false;
         return false;
     }
 }
 
 double Engine::fuel_flow()
 {
-    if (0 < tank.get_quantity() && eng_sw_state && fuel_pump()) {
+    if (0 < tank.get_quantity() && eng_ON && fuel_pump()) {
         f_flow = get_throttle() * gps / 100.0; // gallons
         if (timer_second()) tank.consume(f_flow * 10); // fuel is depleted from tank
-        if (tank.get_quantity() <= 0) tank.set_quantity(0.0);
+        if (tank.get_quantity() <= 0) {
+            tank.set_quantity(0.0);
+            eng_ON == false;
+        }
+
     }
     else { f_flow = 0.0; }
     return f_flow;
@@ -132,7 +134,6 @@ double Engine::fuel_flow()
 void check_inputs()
 {
     pwr_sw_state = digitalRead(power_swtch);
-    eng_sw_state = digitalRead(eng_swtch);
     rfl_sw_state = digitalRead(refuel_swtch);
     gears_sw_state = digitalRead(gears_swtch);
     f_pump_sw_state = digitalRead(f_pump_swtch);
@@ -193,8 +194,7 @@ void gauge_refuel(Fuel_tank& f)
 void gauge_RPM(Engine& e, Servo& servo)
 {
     if (pwr_sw_state) {
-        //double deg = e.rpm() * 180.0 / 100;
-        double angle = floatMap(e.rpm(), 0, 110, 0, 195);
+        double angle = floatMap(e.get_rpm(), 0, 110, 0, 195);
         servo.write(int(angle));
     }
     else servo.write(0.0);
@@ -253,6 +253,15 @@ void gauge_Speed()
 
 //--------------------------------------------------------
 
+void Engine::get_readings() {
+
+    if (start_btn_state()) eng_ON = true;
+    fuel_pump();
+    rpm();
+}
+
+//--------------------------------------------------------
+
 void print_stats()
 {
     ///Serial.print("\t Time(millis): ");
@@ -276,12 +285,6 @@ void print_stats()
     Serial.print("\t F_pump: ");
     Serial.print(f_pump_sw_state);
     Serial.println();
-}
-
-void engine_status(Engine& e)
-{
-    e.fuel_pump();
-    e.rpm();
 }
 
 void setup()
@@ -320,8 +323,9 @@ void loop()
     engine2.set_throttle(analogRead(throttle2_knob));
 
 
-    engine_status(engine1);
-    engine_status(engine2);
+    engine1.get_readings();
+    engine2.get_readings();
+
     gears();
     gauge_pwr();
 
