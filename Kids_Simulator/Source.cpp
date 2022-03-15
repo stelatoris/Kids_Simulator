@@ -3,7 +3,8 @@
 #include <Servo.h>
 #include "tools.h"
 
-Servo servo_RPM;
+Servo servo_RPM1;
+Servo servo_RPM2;
 Servo servo_Fuel;
 Servo servo_Speed;
 
@@ -12,7 +13,8 @@ const int eng_swtch{ 3 };
 const int refuel_swtch{ 40 };
 const int gears_swtch{ 5 };
 const int f_pump_swtch{ 6 };
-const uint8_t throttle_knob{ A0 };
+const uint8_t throttle1_knob{ A0 };
+const uint8_t throttle2_knob{ A1 };
 
 int pwr_sw_state{ 0 };
 int eng_sw_state{ 0 };
@@ -28,11 +30,15 @@ const int f_pump_LED{ 25 };
 const int gears_LED{ 26 };
 
 const int fuel_servo{ 30 };
-const int rpm_servo{ 31 };
-const uint8_t speed_servo{ A1 };
+const int rpm1_servo{ 31 };
+const int rpm2_servo{ 32 };
+
+const uint8_t speed_servo{ A2 };
 
 Fuel_tank tank;
 Engine engine1(tank);
+Engine engine2(tank);
+
 
 double speed_v{ 0 };
 
@@ -63,9 +69,16 @@ void Fuel_tank::refuel()
 
 double Engine::get_throttle()
 {
-    double angle = floatMap(throttle, 0, 1023, 0, 100);
-    return angle;
-    //return throttle_value * 100.0 / 1023.0;
+    if (get_throttle_axis() == false) {
+        double angle = floatMap(throttle, 0, 1023, 0, 100);
+        return angle;
+        //return throttle_value * 100.0 / 1023.0;
+    }
+    else {
+        double angle = floatMap(throttle, 0, 1023, 0, 100);
+        return 100 - angle;
+
+    }
 }
 
 double Engine::rpm()
@@ -107,7 +120,7 @@ double Engine::fuel_flow()
 {
     if (0 < tank.get_quantity() && eng_sw_state && fuel_pump()) {
         f_flow = get_throttle() * gps / 100.0; // gallons
-        if (timer_second()) tank.consume(f_flow * 100); // fuel is depleted from tank
+        if (timer_second()) tank.consume(f_flow * 10); // fuel is depleted from tank
         if (tank.get_quantity() <= 0) tank.set_quantity(0.0);
     }
     else { f_flow = 0.0; }
@@ -144,7 +157,9 @@ void gauge_fuel_qty(Fuel_tank& f)
 {
     if (pwr_sw_state == HIGH) {
         double lvl = f.get_quantity() * 180 / f.get_capacity();
-        servo_Fuel.write(180 - int(lvl));
+        double angle = floatMap(lvl, 0, 1023, 0, 895);
+
+        servo_Fuel.write(int(angle));
     }
     else servo_Fuel.write(180);
 }
@@ -175,13 +190,14 @@ void gauge_refuel(Fuel_tank& f)
 }
 //--------------------------------------------------------
 
-void gauge_RPM(Engine& e)
+void gauge_RPM(Engine& e, Servo& servo)
 {
     if (pwr_sw_state) {
-        double deg = e.rpm() * 180.0 / 100;
-        servo_RPM.write(int(deg));
+        //double deg = e.rpm() * 180.0 / 100;
+        double angle = floatMap(e.rpm(), 0, 110, 0, 195);
+        servo.write(int(angle));
     }
-    else servo_RPM.write(0.0);
+    else servo.write(0.0);
 }
 
 //----------
@@ -247,12 +263,18 @@ void print_stats()
     Serial.print(tank.get_quantity());
     Serial.print("\t Fuel flow: ");
     Serial.print(engine1.fuel_flow());
-    Serial.print("\t Throttle: ");
+    Serial.print("\t Throttle 1: ");
     Serial.print(engine1.get_throttle());
-    Serial.print("\t RPM: ");
+    Serial.print("\t Throttle 2: ");
+    Serial.print(engine2.get_throttle());
+    Serial.print("\t RPM 1: ");
     Serial.print(engine1.rpm());
+    Serial.print("\t RPM 2: ");
+    Serial.print(engine2.rpm());
     Serial.print("\t Speed: ");
     Serial.print(speed_v);
+    Serial.print("\t F_pump: ");
+    Serial.print(f_pump_sw_state);
     Serial.println();
 }
 
@@ -274,13 +296,17 @@ void setup()
     pinMode(gears_swtch, INPUT);
     pinMode(f_pump_swtch, INPUT);
     pinMode(f_pump_LED, OUTPUT);
-    pinMode(throttle_knob, INPUT);
+    pinMode(throttle1_knob, INPUT);
+    pinMode(throttle2_knob, INPUT);
     pinMode(speed_servo, OUTPUT);
-    pinMode(rpm_servo, OUTPUT);
+    pinMode(rpm1_servo, OUTPUT);
+    pinMode(rpm2_servo, OUTPUT);
     pinMode(fuel_servo, OUTPUT);
-    servo_RPM.attach(rpm_servo);
+    servo_RPM1.attach(rpm1_servo);
+    servo_RPM2.attach(rpm2_servo);
     servo_Fuel.attach(fuel_servo);
     servo_Speed.attach(speed_servo);
+    engine2.flip_throttle(true);
 
 }
 
@@ -289,13 +315,23 @@ void loop()
 {
     check_inputs();
     timer_second();
-    engine1.set_throttle(analogRead(throttle_knob));
+
+    engine1.set_throttle(analogRead(throttle1_knob));
+    engine2.set_throttle(analogRead(throttle2_knob));
+
 
     engine_status(engine1);
+    engine_status(engine2);
     gears();
     gauge_pwr();
+
     gauge_eng(engine1);
-    gauge_RPM(engine1);
+    gauge_eng(engine2);
+
+
+    gauge_RPM(engine1, servo_RPM1);
+    gauge_RPM(engine2, servo_RPM2);
+
     gauge_refuel(tank);
     gauge_fuel_qty(tank);
     gauge_Speed();

@@ -26,7 +26,7 @@ private:
 //---------------------------------
 
 struct Engine {
-    Engine(Fuel_tank& f) : tank{ f } {}
+    Engine(Fuel_tank& f) : tank{ f } { thrtl_flip = false; }
 
     double rpm();
     double fuel_flow();
@@ -34,6 +34,8 @@ struct Engine {
     bool fuel_pump();
     bool engineON() { return eng_ON; }
     void set_throttle(double t) { throttle = t; }
+    void flip_throttle(bool b) { thrtl_flip = b; } // flips rotation on potentiometer
+    bool get_throttle_axis() const { return thrtl_flip; }
 
     //int eng_num;
 
@@ -44,4 +46,5 @@ private:
     double gps = 1.0; // gives gallons per second at 100% throttle
     double f_flow;
     bool eng_ON;
+    bool thrtl_flip;
 };
