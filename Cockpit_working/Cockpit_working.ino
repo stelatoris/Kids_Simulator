@@ -9,11 +9,13 @@ Servo servo_Fuel;
 Servo servo_Speed;
 
 const int power_swtch{ 2 };
-const int eng1_start{8};
-const int eng2_start{9};
 const int refuel_swtch{ 4 };
 const int gears_swtch{ 5 };
 const int f_pump_swtch{ 6 };
+const int eng1_start{8};
+const int eng2_start{9};
+const int eng1_cutoff{10};
+const int eng2_cutoff{11};
 const uint8_t throttle1_knob{ A0 };
 const uint8_t throttle2_knob{ A1 };
 
@@ -22,6 +24,8 @@ int pwr_sw_state{ 0 };
 int rfl_sw_state{ 0 };
 int f_pump_sw_state{ 0 };
 int gears_sw_state{ 0 };
+int eng1_cut_sw_state{ 0 };
+int eng2_cut_sw_state{ 0 };
 
 const int pwr_LED{ 22 };
 const int eng_LED{ 23 };
@@ -36,7 +40,7 @@ const int rpm2_servo{ 32 };
 
 const uint8_t speed_servo{ A2 };
 
-Fuel_tank tank;
+Fuel_tank tank{10000,10000};
 Engine engine1(tank, eng1_start);
 Engine engine2(tank, eng2_start);
 
@@ -78,7 +82,6 @@ double Engine::get_throttle()
     else {
       double angle = floatMap(throttle, 0, 1023, 0, 100);
       return 100-angle;
-      
     }
 }
 
@@ -90,12 +93,14 @@ double Engine::rpm()
             eng_rpm += 1.0;             // spools up
         }
         if (eng_rpm > 100.0 * flow) {
-            eng_rpm -= 1.0;             // spools down
+            eng_rpm -= 0.5;             // spools down
         }
     }
 
-    if (!eng_ON || flow <= 0) {
-        eng_rpm = 0.0;
+    if (!eng_ON || flow <= 0 || fuel_cut_off) {
+        if(eng_rpm<0) eng_rpm = 0.0;
+        else eng_rpm -= 0.5;
+        //eng_rpm = 0.0;
     }
 
     return eng_rpm;
@@ -103,25 +108,31 @@ double Engine::rpm()
 
 bool Engine::fuel_pump()
 {
+    
     if (f_pump_sw_state && pwr_sw_state) {
         digitalWrite(f_pump_LED, HIGH);
         return true;
     }
     else {
         digitalWrite(f_pump_LED, LOW);
-        eng_ON==false;
+        eng_ON=false;
         return false;
     }
 }
 
 double Engine::fuel_flow()
 {
-    if (0 < tank.get_quantity() && eng_ON && fuel_pump()) {
+    if (fuel_cut_off) {
+      f_flow =0.0;
+      eng_ON=false;
+    }
+    
+    else if (0 < tank.get_quantity() && eng_ON && fuel_pump() && !fuel_cut_off) {
         f_flow = get_throttle() * gps / 100.0; // gallons
-        if (timer_second()) tank.consume(f_flow*10); // fuel is depleted from tank
+        if (timer_second()) tank.consume(f_flow*40); // fuel is depleted from tank
         if (tank.get_quantity() <= 0) {
           tank.set_quantity(0.0);
-          eng_ON==false;
+          eng_ON=false;
         }
         
     }
@@ -186,15 +197,15 @@ void gauge_refuel(Fuel_tank& f)
         else {}
     }
 
-    if (rfl_sw_state == HIGH) f.refuel();
-    else {}
+    //if (rfl_sw_state == HIGH) f.refuel();
+    //else {}
 }
 //--------------------------------------------------------
 
 void gauge_RPM(Engine& e, Servo& servo)
 {
     if (pwr_sw_state) {
-        double angle = floatMap(e.get_rpm(), 0, 110, 0, 195);
+        double angle = floatMap(e.get_rpm(), 0, 100, 0, 165);
         servo.write(int(angle));
     }
     else servo.write(0.0);
@@ -266,24 +277,31 @@ void print_stats()
 {
     ///Serial.print("\t Time(millis): ");
     //Serial.print(millis());
-    Serial.print("\t Time(s): ");
-    Serial.print(seconds);
+    //Serial.print("\t Time(s): ");
+    //Serial.print(seconds);
     Serial.print("\t Fuel Amount: ");
     Serial.print(tank.get_quantity());
     Serial.print("\t Fuel flow: ");
     Serial.print(engine1.fuel_flow());
-    Serial.print("\t Throttle 1: ");
-    Serial.print(engine1.get_throttle());
-    Serial.print("\t Throttle 2: ");
-    Serial.print(engine2.get_throttle());
+Serial.print("\t Fuel Low: ");
+    Serial.print(digitalRead(fuel_L_LED));
+    
+    //Serial.print("\t Throttle 1: ");
+    //Serial.print(engine1.get_throttle());
+    //Serial.print("\t Throttle 2: ");
+    //Serial.print(engine2.get_throttle());
     Serial.print("\t RPM 1: ");
     Serial.print(engine1.rpm());
     Serial.print("\t RPM 2: ");
     Serial.print(engine2.rpm());
-    Serial.print("\t Speed: ");
-    Serial.print(speed_v);
-    Serial.print("\t F_pump: ");
-    Serial.print(f_pump_sw_state);
+    Serial.print("\t E1 On: ");
+    Serial.print(engine1.engineON());
+    Serial.print("\t E2 On: ");
+    Serial.print(engine2.engineON());
+    //Serial.print("\t Speed: ");
+    //Serial.print(speed_v);
+    //Serial.print("\t F_pump: ");
+    //Serial.print(f_pump_sw_state);
     Serial.println();
 }
 
@@ -292,21 +310,25 @@ void setup()
     Serial.begin(9600);
     pinMode(power_swtch, INPUT);
     pinMode(eng1_start, INPUT);
-    pinMode(eng2_start, INPUT);    
+    pinMode(eng2_start, INPUT);
+    pinMode(gears_swtch, INPUT);
+    pinMode(f_pump_swtch, INPUT);
+    pinMode(eng1_cutoff, INPUT);
+    pinMode(eng2_cutoff, INPUT);
+    pinMode(throttle1_knob, INPUT);
+    pinMode(throttle2_knob, INPUT);
+       
     pinMode(pwr_LED, OUTPUT);
     pinMode(eng_LED, OUTPUT);
     pinMode(fuel_E_LED, OUTPUT);
     pinMode(fuel_L_LED, OUTPUT);
     pinMode(gears_LED, OUTPUT);
-    pinMode(gears_swtch, INPUT);
-    pinMode(f_pump_swtch, INPUT);
     pinMode(f_pump_LED, OUTPUT);
-    pinMode(throttle1_knob, INPUT);
-    pinMode(throttle2_knob, INPUT);
     pinMode(speed_servo, OUTPUT);
     pinMode(rpm1_servo, OUTPUT);
     pinMode(rpm2_servo, OUTPUT);
     pinMode(fuel_servo, OUTPUT);
+    
     servo_RPM1.attach(rpm1_servo);
     servo_RPM2.attach(rpm2_servo);
     servo_Fuel.attach(fuel_servo);
@@ -322,7 +344,8 @@ void loop()
     
     engine1.set_throttle(analogRead(throttle1_knob));
     engine2.set_throttle(analogRead(throttle2_knob));
-
+    engine1.set_F_cut_off(digitalRead(eng1_cutoff));
+    engine2.set_F_cut_off(digitalRead(eng2_cutoff));
 
     engine1.get_readings();
     engine2.get_readings();

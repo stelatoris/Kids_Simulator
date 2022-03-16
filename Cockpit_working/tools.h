@@ -9,7 +9,7 @@ double floatMap(double x, double in_min, double in_max, double out_min, double o
 struct Fuel_tank {
 
     Fuel_tank(double cap, double quant) : cpcty{ cap }, qty{ quant } {}
-    Fuel_tank() : cpcty{ 10000 }, qty{ 5000 } {}
+    Fuel_tank() : cpcty{ 10000 }, qty{ 1000 } {}
 
     double get_quantity() const { return qty; }
     void set_quantity(double q) { qty = q; }
@@ -31,6 +31,7 @@ struct Engine {
     bool start_btn_state() { return digitalRead(eng_start_pin); }
     double rpm();
     double get_rpm() { return eng_rpm; }
+    
     double fuel_flow();
     double get_throttle();
     bool fuel_pump();
@@ -38,6 +39,7 @@ struct Engine {
     void set_throttle(double t) { throttle = t; }
     void flip_throttle(bool b ) { thrtl_flip=b; } // flips rotation on potentiometer
     bool get_throttle_axis() const { return thrtl_flip; }
+    void set_F_cut_off(int s) { fuel_cut_off=s; }
 
         
     void get_readings();
@@ -52,4 +54,5 @@ private:
     double f_flow;
     bool eng_ON;
     bool thrtl_flip;
+    bool fuel_cut_off;
 };
