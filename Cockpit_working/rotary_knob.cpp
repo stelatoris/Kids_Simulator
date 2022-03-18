@@ -1,41 +1,83 @@
-#include <CFRotaryEncoder.h>                                                                                // CF Rotary Encoder.
+// Rotary Encoder Inputs
+#define CLK 2
+#define DT 3
+#define SW 4
 
-const int ROT_PIN_OUTPUT_A = D6;
-const int ROT_PIN_OUTPUT_B = D0;
-const int ROT_PIN_PUSH_BUT = D5;
-CFRotaryEncoder rotaryEncoder(ROT_PIN_OUTPUT_A, ROT_PIN_OUTPUT_B, ROT_PIN_PUSH_BUT);                        // Rotary Endoder.
+int counter = 0;
+int currentStateCLK;
+int lastStateCLK;
+String currentDir ="";
+unsigned long lastButtonPress = 0;
+
+void rotary_setup()
+{
+    // Set encoder pins as inputs
+  pinMode(CLK,INPUT);
+  pinMode(DT,INPUT);
+  pinMode(SW, INPUT_PULLUP);
+
+  // Setup Serial Monitor
+  Serial.begin(9600);
+
+  // Read the initial state of CLK
+  lastStateCLK = digitalRead(CLK);
+}
+
+void rotary_loop()
+{
+  // Read the current state of CLK
+  currentStateCLK = digitalRead(CLK);
+
+  // If last and current state of CLK are different, then pulse occurred
+  // React to only 1 state change to avoid double count
+  if (currentStateCLK != lastStateCLK  && currentStateCLK == 1){
+
+    // If the DT state is different than the CLK state then
+    // the encoder is rotating CCW so decrement
+    if (digitalRead(DT) != currentStateCLK) {
+      counter ++;
+      currentDir ="CW";
+    } else {
+      // Encoder is rotating CW so increment
+      counter --;
+      currentDir ="CCW";
+    }
+
+    Serial.print("Direction: ");
+    Serial.print(currentDir);
+    Serial.print(" | Counter: ");
+    Serial.println(counter);
+  }
+
+  // Remember last CLK state
+  lastStateCLK = currentStateCLK;
+
+  // Read the button state
+  int btnState = digitalRead(SW);
+
+  //If we detect LOW signal, button is pressed
+  if (btnState == LOW) {
+    //if 50ms have passed since last LOW pulse, it means that the
+    //button has been pressed, released and pressed again
+    if (millis() - lastButtonPress > 50) {
+      Serial.println("Button pressed!");
+    }
+
+    // Remember last button press event
+    lastButtonPress = millis();
+  }
+
+  // Put in a slight delay to help debounce the reading
+  delay(1);
+}
 
 void setup() {
-    Serial.begin(9600);
-
-    // Define callbacks.
-    rotaryEncoder.setAfterRotaryChangeValueCallback(rotaryAfterChangeValueCallback);
-    rotaryEncoder.setPushButtonOnPressCallback(rotaryOnPressCallback);
-
-    // Start rotary encoder.
-    rotaryEncoder.begin();
+  
+  rotary_setup();
 }
 
 void loop() {
-    // Loop rotary encoder.
-    rotaryEncoder.loop();
-}
 
-// ====================
-// Callbacks.
-// ====================
-
-
-void rotaryAfterChangeValueCallback() {
-    if (rotaryEncoder.getDirection() > 0) {
-        Serial.print("Clockwise: ");
-    }
-    else {
-        Serial.print("Counter Clockwise: ");
-    }
-    Serial.println(rotaryEncoder.getValue());
-}
-
-void rotaryOnPressCallback() {
-    Serial.println("Button was pressed.");
+  rotary_loop();
+  
 }
