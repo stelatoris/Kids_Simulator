@@ -17,7 +17,7 @@ struct Fuel_tank {
     void set_capacity(double c) { cpcty = c; }
     double get_capacity() const { return cpcty; }
 
-    void refuel();
+    void refuel(int x);
 private:
     double cpcty;
     double qty;
