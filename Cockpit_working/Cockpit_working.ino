@@ -2,10 +2,9 @@
 //
 #include <Servo.h>
 #include "tools.h"
+#include "LED_Blink.h"
 
 #include "SevenSegmentTM1637.h"
-
-int fuel_qty{0};
 
 //Refuel 4-digit 7 segment Display
 const byte PIN_CLK = 50;   // Green wire define CLK pin (any digital pin)
@@ -36,8 +35,7 @@ Servo servo_Fuel;
 Servo servo_Speed;
 
 const int power_swtch{ 2 };
-const int refuel_swtch{ 4 };
-const int gears_swtch{ 5 };
+const int gears_swtch{ 15 };
 const int f_pump_swtch{ 6 };
 const int eng1_start{8};
 const int eng2_start{9};
@@ -47,8 +45,6 @@ const uint8_t throttle1_knob{ A0 };
 const uint8_t throttle2_knob{ A1 };
 
 int pwr_sw_state{ 0 };
-//int eng_sw_state{ 0 };
-int rfl_sw_state{ 0 };
 int f_pump_sw_state{ 0 };
 int gears_sw_state{ 0 };
 int eng1_cut_sw_state{ 0 };
@@ -61,16 +57,22 @@ const int fuel_L_LED{ 27 };
 const int f_pump_LED{ 25 };
 const int gears_LED{ 26 };
 
+const int gear_redPin= 3;
+const int gear_greenPin = 4;
+const int gear_bluePin = 5;
+
 const int fuel_servo{ 30 };
 const int rpm1_servo{ 31 };
 const int rpm2_servo{ 32 };
-
-const uint8_t speed_servo{ A2 };
+const int speed_servo{ 35 };
 
 Fuel_tank tank{10000,0};
 int ref_amount{0};
+int fill_amount{0};
 Engine engine1(tank, eng1_start);
 Engine engine2(tank, eng2_start);
+LED_timer gear_up;
+LED_timer gear_down;
 
 
 double speed_v{ 0 };
@@ -93,11 +95,89 @@ bool timer_second()
 }
 
 //----------------------------------------------------------------------------
+//******************LED BLINKER **********************************************
 
-void Fuel_tank::refuel(int x)
+void LED_timer::end()
 {
-    qty += x; //lbs
-    if (qty > cpcty) qty = cpcty;
+  prev_on_time=0;
+  prev_off_time=0;
+  prev_time=0;
+
+  blink_on=false;
+  on_interval=false;
+  off_interval=false;
+  switch_ON=false;
+  sequence_done=false;
+}
+
+bool LED_timer::blink_LED( int on_int, int off_int, long total)
+{
+  total_interval=total;
+  on_time=on_int;
+  off_time=off_int;
+
+  if(sequence_done) return false;
+  
+  if(!blink_on && !sequence_done) {   // Start here
+      blink_on=true;
+      prev_on_time=millis();
+      prev_time=millis();
+      on_interval=true;    
+      }
+  else {
+    if(millis()-prev_time>total_interval) {
+    sequence_done=true;
+    blink_on=false;
+    on_interval=false;
+    off_interval=false;
+    sequence_done=true;
+    return false;
+    }
+    else{
+      if(blink_on) {
+        if(on_interval) {
+          if(millis()-prev_on_time>on_time) {
+            on_interval=false;
+            off_interval=true;
+            prev_off_time=millis();
+            return false;        
+          }
+          return true;
+        }
+        else{
+          if(millis()-prev_off_time>off_time){
+            off_interval=false;
+            on_interval=true;
+            prev_on_time=millis();
+            return true;
+          }
+          return false;
+        }
+      }
+      else return false;
+    }
+  }   
+}
+
+//----------------------------------------------------------------------------
+//****************** FUEL/ENGINE **********************************************
+
+void Fuel_tank::set_refuel(int q) 
+{ 
+  if(qty+q>cpcty) refuel_qty=cpcty-qty;
+  else { 
+    refuel_qty=q;
+  }
+}
+
+void Fuel_tank::refuel()
+{
+    if(refuel_qty>0) {
+      qty+=1;       // lbs
+      refuel_qty-=1;
+    }
+    
+    
 }
 
 double Engine::get_throttle()
@@ -139,11 +219,14 @@ bool Engine::fuel_pump()
     
     if (f_pump_sw_state && pwr_sw_state) {
         digitalWrite(f_pump_LED, HIGH);
+        refuel_display.on();
         return true;
     }
     else {
         digitalWrite(f_pump_LED, LOW);
         eng_ON=false;
+        refuel_display.off();
+        ref_amount=0;
         return false;
     }
 }
@@ -157,7 +240,7 @@ double Engine::fuel_flow()
     
     else if (0 < tank.get_quantity() && eng_ON && fuel_pump() && !fuel_cut_off) {
         f_flow = get_throttle() * gps / 100.0; // gallons
-        if (timer_second()) tank.consume(f_flow*40); // fuel is depleted from tank
+        if (timer_second()) tank.consume(f_flow*30); // fuel is depleted from tank
         if (tank.get_quantity() <= 0) {
           tank.set_quantity(0.0);
           eng_ON=false;
@@ -173,7 +256,6 @@ double Engine::fuel_flow()
 void check_inputs()
 {
     pwr_sw_state = digitalRead(power_swtch);
-    rfl_sw_state = digitalRead(refuel_swtch);
     gears_sw_state = digitalRead(gears_swtch);
     f_pump_sw_state = digitalRead(f_pump_swtch);
 }
@@ -186,6 +268,7 @@ void gauge_pwr()
         digitalWrite(eng_LED, LOW);
         digitalWrite(fuel_E_LED, LOW);
         digitalWrite(f_pump_LED, LOW);
+        refuel_display.off();
     }
     else {
         digitalWrite(pwr_LED, HIGH);
@@ -254,9 +337,34 @@ void gauge_eng(Engine& e)
 //--------------------------------------------------------
 void gears()
 {
-    if (pwr_sw_state == HIGH && gears_sw_state == HIGH)
-        digitalWrite(gears_LED, HIGH);
-    else digitalWrite(gears_LED, LOW);
+  if (pwr_sw_state == HIGH){
+      gears_sw_state=digitalRead(gears_swtch);
+    if (gears_sw_state) {      // Gears DOWN
+      gear_up.end();
+      if(!gear_down.sequence_done){
+        if(gear_down.blink_LED(700, 700, 7700)) {
+          setColor(0, 255, 0);
+        }
+      else {
+        setColor(0, 0, 0);
+        }
+      }
+      else {
+          setColor(0, 255, 0);
+        }    
+      //gear_up.switch_ON=false;
+    }
+    else {    // Gears UP
+      gear_down.end();
+      if(gear_up.blink_LED(700, 700, 7700)) {
+        setColor(255, 0, 0);
+      }
+      else {
+        setColor(0, 0, 0);
+      }   
+    }
+  }
+  else setColor(0, 0, 0);
 }
 
 //--------------------------------------------------------
@@ -265,7 +373,7 @@ const double c_d = 0.001;
 double drag{ 0 };
 double speed(double v, Engine& e) {
 
-    double thrust = 2.0 * e.get_rpm();
+    double thrust = 4 * e.get_rpm();
     drag = c_d * pow(v, 2);
     double v_new{ 0.0 };
     double v_old = v;
@@ -281,11 +389,32 @@ double speed(double v, Engine& e) {
 void gauge_Speed()
 {
     if (pwr_sw_state) {
+      if(speed_v<=200) {
+         double deg = floatMap(speed_v, 60, 200, 0, 90);
+         servo_Speed.write(deg);
+      }
+      
+      else if(200<speed_v&&speed_v<=300) {
+         double deg = floatMap(speed_v, 200, 300, 90, 112.5);
+         servo_Speed.write(deg);
+      }
+      else if(300<speed_v&&speed_v<=397) {
+         double deg = floatMap(speed_v, 300, 397, 112.5, 123.75);
+         servo_Speed.write(deg);
+      }
+      
+      else if(300<speed_v&&speed_v<962) {
+         double deg = floatMap(speed_v, 397, 962, 123.75, 180);
+         servo_Speed.write(deg);
+      }
+      
+      /*
         //double deg = speed_v * 180.0 / 500;
-        double deg = floatMap(speed_v, 0, 500, 0, 179);
+        double deg = floatMap(speed_v, 0, 962, 0, 180);
         //Serial.print("\t deg: ");
         //Serial.print(int(deg));
         servo_Speed.write(deg);
+        */
     }
     else servo_Speed.write(0);
 }
@@ -347,11 +476,12 @@ void rotary_loop()
     }
 
     refuel_display.print(ref_amount);
-
+    /*
     Serial.print("Direction: ");
     Serial.print(currentDir);
     Serial.print(" | Refuel amnt: ");
     Serial.println(ref_amount);
+    */
   }
 
   // Remember last CLK state
@@ -366,7 +496,8 @@ void rotary_loop()
     //button has been pressed, released and pressed again
     if (millis() - lastButtonPress > 50) {
       Serial.println("Button pressed!");
-      tank.refuel(ref_amount);
+      //tank.refuel(ref_amount);
+      tank.set_refuel(ref_amount);
       ref_amount=0;
       refuel_display.clear();
       refuel_display.print("FILL");
@@ -392,6 +523,14 @@ void refuel_DSP_setup()
 
 //------------------------------------------------------------------
 
+void setColor(int redValue, int greenValue, int blueValue) 
+{
+  analogWrite(gear_redPin, redValue);
+  analogWrite(gear_greenPin, greenValue);
+  analogWrite(gear_bluePin, blueValue);
+}
+
+//------------------------------------------------------------------
 
 void print_stats()
 {
@@ -425,6 +564,11 @@ Serial.print("\t Fuel Low: ");
     //Serial.print(f_pump_sw_state);
     Serial.println();
     */
+    /*
+    Serial.print("\t Speed: ");
+    Serial.print(speed_v);
+    Serial.println();
+    */
 }
 
 void setup()
@@ -454,6 +598,10 @@ void setup()
     pinMode(rpm1_servo, OUTPUT);
     pinMode(rpm2_servo, OUTPUT);
     pinMode(fuel_servo, OUTPUT);
+
+    pinMode(gear_redPin, OUTPUT);
+    pinMode(gear_greenPin, OUTPUT);
+    pinMode(gear_bluePin, OUTPUT); 
     
     servo_RPM1.attach(rpm1_servo);
     servo_RPM2.attach(rpm2_servo);
@@ -488,7 +636,8 @@ void loop()
     
     gauge_RPM(engine1, servo_RPM1);
     gauge_RPM(engine2, servo_RPM2);
-    
+
+    tank.refuel();
     gauge_refuel(tank);
     gauge_fuel_qty(tank);
     gauge_Speed();

@@ -13,14 +13,16 @@ struct Fuel_tank {
 
     double get_quantity() const { return qty; }
     void set_quantity(double q) { qty = q; }
+    void set_refuel(int q);
     void consume(double q) { qty -= q; }
     void set_capacity(double c) { cpcty = c; }
     double get_capacity() const { return cpcty; }
 
-    void refuel(int x);
+    void refuel();
 private:
     double cpcty;
     double qty;
+    int refuel_qty;
 };
 
 //---------------------------------
