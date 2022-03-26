@@ -3,6 +3,7 @@
 #include <Servo.h>
 #include "tools.h"
 #include "LED_Blink.h"
+#include "RigidBody2D.h"
 
 #include "SevenSegmentTM1637.h"
 
@@ -73,7 +74,8 @@ Engine engine1(tank, eng1_start);
 Engine engine2(tank, eng2_start);
 LED_timer gear_up;
 LED_timer gear_down;
-
+LED_timer fuel_low;
+LED_timer fuel_empty;
 
 double speed_v{ 0 };
 
@@ -198,10 +200,10 @@ double Engine::rpm()
     double flow = fuel_flow();
     if (flow > 0.0 && eng_ON) {               //spools RPM
         if (eng_rpm < 100.0 * flow) {
-            eng_rpm += 0.05;             // spools up
+            eng_rpm += 0.02;             // spools up
         }
         if (eng_rpm > 100.0 * flow) {
-            eng_rpm -= 0.04;             // spools down
+            eng_rpm -= 0.02;             // spools down
         }
     }
 
@@ -292,21 +294,47 @@ void gauge_refuel(Fuel_tank& f)
 {
     if (pwr_sw_state == HIGH) {
         if (f.get_quantity() == 0) {
-            digitalWrite(fuel_E_LED, HIGH);
+          if(!fuel_empty.sequence_done){
+              if(fuel_empty.blink_LED(700, 700, 7000)) {
+                digitalWrite(fuel_E_LED, HIGH);
+              }
+              else {
+                digitalWrite(fuel_E_LED, LOW);
+                }
+            }
+            else {
+              digitalWrite(fuel_E_LED, HIGH);
+            } 
             digitalWrite(fuel_L_LED, LOW);
+            fuel_low.end();
         }
 
         else if (f.get_quantity() <= 10 * f.get_capacity() / 100) {
+            if(!fuel_low.sequence_done){
+              if(fuel_low.blink_LED(700, 700, 4200)) {
+                digitalWrite(fuel_L_LED, HIGH);
+              }
+              else {
+                digitalWrite(fuel_L_LED, LOW);
+                }
+            }
+            else {
+              digitalWrite(fuel_L_LED, HIGH);
+            } 
             digitalWrite(fuel_E_LED, LOW);
-            digitalWrite(fuel_L_LED, HIGH);
+            fuel_empty.end();
         }
 
         else if (f.get_quantity() > 0) {
             digitalWrite(fuel_E_LED, LOW);
             digitalWrite(fuel_L_LED, LOW);
+            fuel_low.end();
+            fuel_empty.end();
         }
         else {}
     }
+
+    // fuel_empty
 
     //if (rfl_sw_state == HIGH) f.refuel();
     //else {}
@@ -368,43 +396,83 @@ void gears()
 }
 
 //--------------------------------------------------------
+//* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * 
+double tTime{0};
+double tInc{10};          // Time increment touse when stepping through the sim
 
-const double c_d = 0.001;
-double drag{ 0 };
-double speed(double v, Engine& e) {
+double s_prev_time;
 
-    double thrust = 4 * e.get_rpm();
-    drag = c_d * pow(v, 2);
-    double v_new{ 0.0 };
-    double v_old = v;
-    double f_x = thrust - drag;
-    v_new = v_old + f_x - 2;
-    if (v_new < 0) v_new = 0.0;
-    return v_new;
+RigidBody airplane{15000.0};
 
-    // Drag = C_D * V^2
-    // V_new = V_old + F_x, where F_x = Thrust - Drag.
+void initializeAirplane ()
+{
+  airplane.vVelocity = 0.0f;
+  airplane.vForces = 0.0f;
+  airplane.vMoments=0.0f;
+  airplane.fC=0.1;
+  airplane.fThrust=0.0f;
 }
+
+void step_Simulation(float dt, Engine& e)
+{
+  float F;    // total force
+  float A;    // acceleration
+  float Vnew; // new velocity at time t + dt
+  float Snew; // new position at time t + dt
+
+  airplane.fThrust=e.rpm();
+
+  // calc total Force
+  F = (airplane.fThrust - (airplane.fC * airplane.vVelocity )) ;
+
+  // calc acceleration
+  A = F/airplane.fMass;
+
+  // Calculate the new velocity at time t + dt
+  // where V is the velocity at time t
+  Vnew = airplane.vVelocity + A * dt;
+  
+  // Calculate the new displacement at time t + dt
+  // where S is the displacement at time t
+  Snew = airplane.S + Vnew * dt;
+  
+  // Update old velocity and displacement with the new ones
+  airplane.vVelocity = Vnew;
+  airplane.S = Snew; 
+
+/*
+  Serial.print("\t fThrust: ");
+  Serial.print(airplane.fThrust);
+  Serial.print("\t vVelocity: ");
+  Serial.print(airplane.vVelocity);
+  Serial.println();
+  */
+  
+}
+
+//* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * 
+
+
 
 void gauge_Speed()
 {
     if (pwr_sw_state) {
-      if(speed_v<=200) {
-         double deg = floatMap(speed_v, 60, 200, 0, 90);
+      if(airplane.vVelocity<=200) {
+         double deg = floatMap(airplane.vVelocity, 60, 200, 0, 90);
          servo_Speed.write(deg);
       }
       
-      else if(200<speed_v&&speed_v<=300) {
-         double deg = floatMap(speed_v, 200, 300, 90, 112.5);
+      else if(200<airplane.vVelocity && airplane.vVelocity<=300) {
+         double deg = floatMap(airplane.vVelocity, 200, 300, 90, 112.5);
          servo_Speed.write(deg);
       }
-      else if(300<speed_v&&speed_v<=397) {
-         double deg = floatMap(speed_v, 300, 397, 112.5, 123.75);
+      else if(300<airplane.vVelocity && airplane.vVelocity<=397) {
+         double deg = floatMap(airplane.vVelocity, 300, 397, 112.5, 123.75);
          servo_Speed.write(deg);
       }
       
-      else if(300<speed_v&&speed_v<962) {
-         double deg = floatMap(speed_v, 397, 962, 123.75, 180);
+      else if(300<airplane.vVelocity && airplane.vVelocity<962) {
+         double deg = floatMap(airplane.vVelocity, 397, 962, 123.75, 180);
          servo_Speed.write(deg);
       }
       
@@ -441,6 +509,7 @@ void rotary_setup()
 
   // Read the initial state of CLK
   lastStateCLK = digitalRead(CLK);
+  initializeAirplane ();
 }
 
 void rotary_loop()
@@ -611,6 +680,8 @@ void setup()
 
     rotary_setup();
     refuel_DSP_setup();
+    initializeAirplane();
+    s_prev_time=millis();
 }
 
 
@@ -640,8 +711,14 @@ void loop()
     tank.refuel();
     gauge_refuel(tank);
     gauge_fuel_qty(tank);
+    
+    
+    
+    step_Simulation(tInc, engine1);
+    //prev_time=millis();
+          
+    
     gauge_Speed();
-    speed_v = speed(speed_v, engine1);
     rotary_loop();
     print_stats();
 }
