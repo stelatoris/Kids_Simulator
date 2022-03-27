@@ -57,4 +57,5 @@ private:
     bool eng_ON;
     bool thrtl_flip;
     bool fuel_cut_off;
+    bool after_burner=false;
 };

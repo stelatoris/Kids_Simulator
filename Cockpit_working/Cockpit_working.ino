@@ -212,7 +212,14 @@ double Engine::rpm()
         else eng_rpm -= 0.04;
         //eng_rpm = 0.0;
     }
-
+    if(eng_rpm>=90) {
+      after_burner=true;
+    }
+    
+    else {
+      after_burner=false;
+    }
+    
     return eng_rpm;
 }
 
@@ -242,7 +249,11 @@ double Engine::fuel_flow()
     
     else if (0 < tank.get_quantity() && eng_ON && fuel_pump() && !fuel_cut_off) {
         f_flow = get_throttle() * gps / 100.0; // gallons
-        if (timer_second()) tank.consume(f_flow*30); // fuel is depleted from tank
+        if (timer_second()) {
+          if(after_burner) tank.consume(f_flow*40); // After burner on
+          else tank.consume(f_flow*20); // fuel is depleted from tank
+        }  
+        
         if (tank.get_quantity() <= 0) {
           tank.set_quantity(0.0);
           eng_ON=false;
@@ -402,7 +413,7 @@ double tInc{10};          // Time increment touse when stepping through the sim
 
 double s_prev_time;
 
-RigidBody airplane{15000.0};
+RigidBody airplane{10000.0, engine1, engine2, tank};
 
 void initializeAirplane ()
 {
@@ -420,13 +431,19 @@ void step_Simulation(float dt, Engine& e)
   float Vnew; // new velocity at time t + dt
   float Snew; // new position at time t + dt
 
-  airplane.fThrust=e.rpm();
+  if(e.rpm()<=50) airplane.fThrust=e.rpm()*0.5;
+  else if (50 < e.rpm() && e.rpm() <=55 ) airplane.fThrust=e.rpm()* 0.6;
+  else if (55 < e.rpm() && e.rpm() <=60 ) airplane.fThrust=e.rpm()* 0.75;
+  else if (60 < e.rpm() && e.rpm() <=70 ) airplane.fThrust=e.rpm()* 0.9;
+  else if (70 < e.rpm() && e.rpm() <=90 ) airplane.fThrust=e.rpm();
+  else if (e.rpm() > 90 ) airplane.fThrust=e.rpm()* 1.2;
+  else airplane.fThrust=e.rpm();
 
   // calc total Force
   F = (airplane.fThrust - (airplane.fC * airplane.vVelocity )) ;
 
   // calc acceleration
-  A = F/airplane.fMass;
+  A = F/airplane.get_fMass();
 
   // Calculate the new velocity at time t + dt
   // where V is the velocity at time t
@@ -690,31 +707,32 @@ void loop()
     check_inputs();
     timer_second();
     
-    engine1.set_throttle(analogRead(throttle1_knob));
-    engine2.set_throttle(analogRead(throttle2_knob));
-    engine1.set_F_cut_off(digitalRead(eng1_cutoff));
-    engine2.set_F_cut_off(digitalRead(eng2_cutoff));
+    airplane.engine1.set_throttle(analogRead(throttle1_knob));
+    airplane.engine2.set_throttle(analogRead(throttle2_knob));
+    
+    airplane.engine1.set_F_cut_off(digitalRead(eng1_cutoff));
+    airplane.engine2.set_F_cut_off(digitalRead(eng2_cutoff));
 
-    engine1.get_readings();
-    engine2.get_readings();
+    airplane.engine1.get_readings();
+    airplane.engine2.get_readings();
 
     gears();
     gauge_pwr();
     
-    gauge_eng(engine1);
-    gauge_eng(engine2);
+    gauge_eng(airplane.engine1);
+    gauge_eng(airplane.engine2);
  
     
-    gauge_RPM(engine1, servo_RPM1);
-    gauge_RPM(engine2, servo_RPM2);
+    gauge_RPM(airplane.engine1, servo_RPM1);
+    gauge_RPM(airplane.engine2, servo_RPM2);
 
-    tank.refuel();
-    gauge_refuel(tank);
-    gauge_fuel_qty(tank);
+    airplane.tank.refuel();
+    gauge_refuel(airplane.tank);
+    gauge_fuel_qty(airplane.tank);
     
     
     
-    step_Simulation(tInc, engine1);
+    step_Simulation(tInc, airplane.engine1);
     //prev_time=millis();
           
     
