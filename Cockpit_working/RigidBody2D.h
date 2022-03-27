@@ -5,7 +5,7 @@ struct RigidBody {
   RigidBody(float m, Engine& e1, Engine& e2, Fuel_tank& t) 
     : fMass{m}, engine1{e1}, engine2{e2}, tank{t} {}
   
-  float fThrust;    // total thrust
+  float total_Thrust();
   
   double vVelocity;
   float fC;   // drag coefficient
@@ -26,8 +26,6 @@ struct RigidBody {
 
   private:
   float fMass;      // total mass (constant)
-  
-  
-
+  float fThrust;    // total thrust
 
 };

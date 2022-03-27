@@ -8,9 +8,14 @@
 #include "SevenSegmentTM1637.h"
 
 //Refuel 4-digit 7 segment Display
-const byte PIN_CLK = 50;   // Green wire define CLK pin (any digital pin)
-const byte PIN_DIO = 52;   // Yellow Wire define DIO pin (any digital pin)
-SevenSegmentTM1637    refuel_display(PIN_CLK, PIN_DIO);
+const byte Refuel_PIN_CLK = 50;   // Green wire define CLK pin (any digital pin)
+const byte Refuel_PIN_DIO = 52;   // Yellow Wire define DIO pin (any digital pin)
+SevenSegmentTM1637    refuel_display(Refuel_PIN_CLK, Refuel_PIN_DIO);
+
+//Airspeed 4-digit 7 segment Display
+const byte AirSpeed_PIN_CLK = 45;   // Green wire define CLK pin (any digital pin)
+const byte AirSpeed_PIN_DIO = 47;   // Yellow Wire define DIO pin (any digital pin)
+SevenSegmentTM1637    airspeed_display(AirSpeed_PIN_CLK, AirSpeed_PIN_DIO);
 
 //------------------------------------------------------------------
 // Rotary Encoder Inputs
@@ -177,9 +182,7 @@ void Fuel_tank::refuel()
     if(refuel_qty>0) {
       qty+=1;       // lbs
       refuel_qty-=1;
-    }
-    
-    
+    }    
 }
 
 double Engine::get_throttle()
@@ -223,6 +226,17 @@ double Engine::rpm()
     return eng_rpm;
 }
 
+float Engine::get_thrust()
+{
+  if(rpm()<=50) thrust=rpm()*0.5;
+  else if (50 < rpm() && rpm() <=55 ) thrust=rpm()* 0.6;
+  else if (55 < rpm() && rpm() <=60 ) thrust=rpm()* 0.75;
+  else if (60 < rpm() && rpm() <=70 ) thrust=rpm()* 0.9;
+  else if (70 < rpm() && rpm() <=90 ) thrust=rpm();
+  else if (rpm() > 90 ) thrust=rpm()* 1.2;
+  else thrust=rpm();
+}
+
 bool Engine::fuel_pump()
 {
     
@@ -257,8 +271,7 @@ double Engine::fuel_flow()
         if (tank.get_quantity() <= 0) {
           tank.set_quantity(0.0);
           eng_ON=false;
-        }
-        
+        }        
     }
     else { f_flow = 0.0; }
     return f_flow;
@@ -282,9 +295,12 @@ void gauge_pwr()
         digitalWrite(fuel_E_LED, LOW);
         digitalWrite(f_pump_LED, LOW);
         refuel_display.off();
+        airspeed_display.off();
+        
     }
     else {
         digitalWrite(pwr_LED, HIGH);
+        airspeed_display.on();
     }
 }
 //---------------------------------
@@ -415,32 +431,30 @@ double s_prev_time;
 
 RigidBody airplane{10000.0, engine1, engine2, tank};
 
+float RigidBody::total_Thrust()
+{
+  return engine1.get_thrust()+engine2.get_thrust();
+}
+
 void initializeAirplane ()
 {
   airplane.vVelocity = 0.0f;
   airplane.vForces = 0.0f;
   airplane.vMoments=0.0f;
-  airplane.fC=0.1;
-  airplane.fThrust=0.0f;
+  airplane.fC=0.2;
 }
 
-void step_Simulation(float dt, Engine& e)
+void step_Simulation(float dt)
 {
   float F;    // total force
   float A;    // acceleration
   float Vnew; // new velocity at time t + dt
   float Snew; // new position at time t + dt
 
-  if(e.rpm()<=50) airplane.fThrust=e.rpm()*0.5;
-  else if (50 < e.rpm() && e.rpm() <=55 ) airplane.fThrust=e.rpm()* 0.6;
-  else if (55 < e.rpm() && e.rpm() <=60 ) airplane.fThrust=e.rpm()* 0.75;
-  else if (60 < e.rpm() && e.rpm() <=70 ) airplane.fThrust=e.rpm()* 0.9;
-  else if (70 < e.rpm() && e.rpm() <=90 ) airplane.fThrust=e.rpm();
-  else if (e.rpm() > 90 ) airplane.fThrust=e.rpm()* 1.2;
-  else airplane.fThrust=e.rpm();
+  
 
   // calc total Force
-  F = (airplane.fThrust - (airplane.fC * airplane.vVelocity )) ;
+  F = (airplane.total_Thrust() - (airplane.fC * airplane.vVelocity )) ;
 
   // calc acceleration
   A = F/airplane.get_fMass();
@@ -500,8 +514,13 @@ void gauge_Speed()
         //Serial.print(int(deg));
         servo_Speed.write(deg);
         */
+        airspeed_display.clear();
+        airspeed_display.print(int(airplane.vVelocity));
     }
-    else servo_Speed.write(0);
+    else {
+      servo_Speed.write(0);
+    }
+    
 }
 
 //--------------------------------------------------------
@@ -581,7 +600,6 @@ void rotary_loop()
     //if 50ms have passed since last LOW pulse, it means that the
     //button has been pressed, released and pressed again
     if (millis() - lastButtonPress > 50) {
-      Serial.println("Button pressed!");
       //tank.refuel(ref_amount);
       tank.set_refuel(ref_amount);
       ref_amount=0;
@@ -603,7 +621,12 @@ void refuel_DSP_setup()
 {
   refuel_display.begin();            // initializes the display
   refuel_display.setBacklight(100);  // set the brightness to 100 %
-  //refuel_display.print("FUEL");      // display INIT on the display
+}
+
+void airspeed_DSP_setup()
+{
+  airspeed_display.begin();            // initializes the display
+  airspeed_display.setBacklight(100);  // set the brightness to 100 %
 }
 
 
@@ -653,8 +676,10 @@ Serial.print("\t Fuel Low: ");
     /*
     Serial.print("\t Speed: ");
     Serial.print(speed_v);
-    Serial.println();
     */
+
+    //Serial.println();
+    
 }
 
 void setup()
@@ -697,6 +722,7 @@ void setup()
 
     rotary_setup();
     refuel_DSP_setup();
+    airspeed_DSP_setup();
     initializeAirplane();
     s_prev_time=millis();
 }
@@ -707,14 +733,14 @@ void loop()
     check_inputs();
     timer_second();
     
-    airplane.engine1.set_throttle(analogRead(throttle1_knob));
-    airplane.engine2.set_throttle(analogRead(throttle2_knob));
+    engine1.set_throttle(analogRead(throttle1_knob));
+    engine2.set_throttle(analogRead(throttle2_knob));
     
-    airplane.engine1.set_F_cut_off(digitalRead(eng1_cutoff));
-    airplane.engine2.set_F_cut_off(digitalRead(eng2_cutoff));
+    engine1.set_F_cut_off(digitalRead(eng1_cutoff));
+    engine2.set_F_cut_off(digitalRead(eng2_cutoff));
 
-    airplane.engine1.get_readings();
-    airplane.engine2.get_readings();
+    engine1.get_readings();
+    engine2.get_readings();
 
     gears();
     gauge_pwr();
@@ -723,16 +749,16 @@ void loop()
     gauge_eng(airplane.engine2);
  
     
-    gauge_RPM(airplane.engine1, servo_RPM1);
-    gauge_RPM(airplane.engine2, servo_RPM2);
+    gauge_RPM(engine1, servo_RPM1);
+    gauge_RPM(engine2, servo_RPM2);
 
-    airplane.tank.refuel();
-    gauge_refuel(airplane.tank);
-    gauge_fuel_qty(airplane.tank);
+    tank.refuel();
+    gauge_refuel(tank);
+    gauge_fuel_qty(tank);
     
     
     
-    step_Simulation(tInc, airplane.engine1);
+    step_Simulation(tInc);
     //prev_time=millis();
           
     

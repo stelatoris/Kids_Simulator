@@ -33,7 +33,8 @@ struct Engine {
     bool start_btn_state() { return digitalRead(eng_start_pin); }
     double rpm();
     double get_rpm() { return eng_rpm; }
-    
+
+    float get_thrust();
     double fuel_flow();
     double get_throttle();
     bool fuel_pump();
@@ -52,6 +53,7 @@ private:
     int eng_start_pin;
     double throttle;
     double eng_rpm;
+    float thrust=0.0f;
     double gps = 1.0; // gives gallons per second at 100% throttle
     double f_flow;
     bool eng_ON;
