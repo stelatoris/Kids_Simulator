@@ -2,8 +2,9 @@
 
 struct Drag_Forces
 {
-  Drag_Forces(String n, float d)
-    : f_name{n}, cD{d}, f_status{false} {}
+  Drag_Forces(String n, float d, bool s)
+    : f_name{n}, cD{d}, f_status{s} {}
+    
     Drag_Forces() : f_name{String()}, cD{0.0}, f_status{false} {}
   
   String f_name;
@@ -19,10 +20,10 @@ struct RigidBody {
     : fMass{m}, engine1{e1}, engine2{e2}, tank{t} {}
   
   float total_Thrust();
-  float total_fC() {return fC+gears_fC;}
-  void set_fC(float d) {fC=d;}
+  float total_fC();
+  //void set_fC(float d) {fC=d;}
   void set_gears_fC(float d) {gears_fC=d;}
-  void add_drag_force(String n, float d);
+  void add_drag_force(String n, float d, bool s);
   
   double vVelocity;
   
@@ -40,18 +41,29 @@ struct RigidBody {
   Engine& engine1;
   Engine& engine2;
   Fuel_tank& tank;
-
+  vector<Drag_Forces> drag;
   private:
   float fMass;      // total mass (constant)
   float fThrust;    // total thrust
-  float fC;   // drag coefficient
+  //float fC;   // drag coefficient
   float gears_fC;   // drag coefficient
-  vector<Drag_Forces> drag;
+  
 
 };
 
-void RigidBody::add_drag_force(String n, float d)
+void RigidBody::add_drag_force(String n, float d, bool s)
 {
-  Drag_Forces temp{n,d};
-  drag.push_back(temp);
+  //Drag_Forces temp{n,d, s};
+  drag.push_back(Drag_Forces{n,d,s});
+}
+
+float RigidBody::total_fC() 
+{
+  float total{0};
+  for(int i=0; i<drag.size();++i){
+    if(drag[i].f_status==true) {
+      total+=drag[i].cD;
+    }
+  }
+  return total;
 }

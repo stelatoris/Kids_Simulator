@@ -81,8 +81,11 @@ Engine engine1(tank, eng1_start);
 Engine engine2(tank, eng2_start);
 LED_timer gear_up;
 LED_timer gear_down;
+LED_timer gear_over_spd;
 LED_timer fuel_low;
 LED_timer fuel_empty;
+
+RigidBody airplane{10000.0, engine1, engine2, tank};
 
 double speed_v{ 0 };
 
@@ -398,18 +401,40 @@ void gears()
       gears_sw_state=digitalRead(gears_swtch);
     if (gears_sw_state) {      // Gears DOWN
       gear_up.end();
-      if(!gear_down.sequence_done){
-        if(gear_down.blink_LED(700, 700, 7700)) {
-          setColor(0, 255, 0);
+      //gear_over_spd
+      if(airplane.vVelocity>250) {
+        if(!gear_over_spd.sequence_done){
+          if(gear_over_spd.blink_LED(200, 200, 2000000)) {
+            setColor(255, 150, 0);
+          }
+        else {
+          setColor(0, 0, 0);
+          }
         }
-      else {
-        setColor(0, 0, 0);
-        }
+        else {
+            setColor(255, 150, 0);
+            gear_down.sequence_done=true;
+          }    
+        //gear_up.switch_ON=false;
+        airplane.drag[1].f_status=true;
       }
+
       else {
-          setColor(0, 255, 0);
-        }    
-      //gear_up.switch_ON=false;
+        if(!gear_down.sequence_done){
+          if(gear_down.blink_LED(700, 700, 7700)) {
+            setColor(0, 255, 0);
+          }
+        else {
+          setColor(0, 0, 0);
+          }
+        }
+        else {
+            setColor(0, 255, 0);
+          }    
+        //gear_up.switch_ON=false;
+        airplane.drag[1].f_status=true;
+      }
+      
     }
     else {    // Gears UP
       gear_down.end();
@@ -418,7 +443,8 @@ void gears()
       }
       else {
         setColor(0, 0, 0);
-      }   
+      }
+      airplane.drag[1].f_status=false;   
     }
   }
   else setColor(0, 0, 0);
@@ -431,7 +457,7 @@ double tInc{10};          // Time increment touse when stepping through the sim
 
 double s_prev_time;
 
-RigidBody airplane{10000.0, engine1, engine2, tank};
+
 
 float RigidBody::total_Thrust()
 {
@@ -443,10 +469,10 @@ void initializeAirplane ()
   airplane.vVelocity = 0.0f;
   airplane.vForces = 0.0f;
   //airplane.vMoments=0.0f;
-  airplane.set_fC(0.2);
-  airplane.set_gears_fC(0.05);
-  airplane.add_drag_force("fuselage", 0.2);   // elem [0]
-  airplane.add_drag_force("gears", 0.2);   // elem [1]
+  //airplane.set_fC(0.2);
+  //airplane.set_gears_fC(0.05);
+  airplane.add_drag_force("fuselage", 0.2, true);   // elem [0]
+  airplane.add_drag_force("gears", 0.2, false);   // elem [1]
 }
 
 void step_Simulation(float dt)
@@ -681,8 +707,26 @@ Serial.print("\t Fuel Low: ");
     /*
     Serial.print("\t Speed: ");
     Serial.print(speed_v);
-    */
+    
    
+    Serial.print("\t drag: ");
+    Serial.print(airplane.total_fC());
+    Serial.print("\t name: ");
+    Serial.print(airplane.drag[0].f_name);
+    Serial.print("\t cD: ");
+    Serial.print(airplane.drag[0].cD);
+    Serial.print("\t Status: ");
+    Serial.print(airplane.drag[0].f_status);
+
+        Serial.print("\t name: ");
+    Serial.print(airplane.drag[1].f_name);
+    Serial.print("\t cD: ");
+    Serial.print(airplane.drag[1].cD);
+    Serial.print("\t Status: ");
+    Serial.print(airplane.drag[1].f_status);
+    Serial.println();
+    */
+
     
     //Serial.println();
     
@@ -730,7 +774,6 @@ void setup()
     rotary_setup();
     refuel_DSP_setup();
     airspeed_DSP_setup();
-    initializeAirplane();
     s_prev_time=millis();
 }
 
