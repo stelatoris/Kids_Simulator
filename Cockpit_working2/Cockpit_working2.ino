@@ -420,6 +420,7 @@ void gears()
       }
 
       else {
+        gear_over_spd.end();
         if(!gear_down.sequence_done){
           if(gear_down.blink_LED(700, 700, 7700)) {
             setColor(0, 255, 0);
@@ -485,7 +486,8 @@ void step_Simulation(float dt)
   
 
   // calc total Force
-  F = (airplane.total_Thrust() - (airplane.total_fC() * airplane.vVelocity )) ;
+  if(airplane.vVelocity<20)  F = (airplane.total_Thrust() - (airplane.total_fC() * airplane.vVelocity) -10) ; // add tire drag
+  else F = (airplane.total_Thrust() - (airplane.total_fC() * airplane.vVelocity) ) ;
 
   // calc acceleration
   A = F/airplane.get_fMass();
@@ -499,6 +501,7 @@ void step_Simulation(float dt)
   Snew = airplane.S + Vnew * dt;
   
   // Update old velocity and displacement with the new ones
+  if(Vnew<0) Vnew = 0;
   airplane.vVelocity = Vnew;
   airplane.S = Snew; 
 
